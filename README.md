@@ -37,3 +37,10 @@ Without Docker: Node 20+, PostgreSQL 16+, copy `backend/.env.example` to `backen
 ## What this public copy leaves out
 
 `backend/.env` and any live tokens. Fill the example env file before running.
+
+## Documents
+
+- `DEPLOY.md` is the Ubuntu install: Docker Compose, the admin on port 5173, Nginx, and HTTPS for the TikTok webhook.
+- `sendpulse/SENDPULSE_SETUP.md` is how the sheet row is fetched inside a SendPulse flow and how the manager is notified. Tokens stay in the environment.
+- `sendpulse/05_SIMPLE_FLOW.md` is the canvas that SendPulse will save: no arrows back to the same agent, a Message block after the sheet, and a dead end after the hand-over tag.
+- The `.txt` prompts next to those guides stay in Ukrainian. That is the language suppliers write in. Translating them would change the agent, not the case write-up.

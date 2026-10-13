@@ -1,22 +1,19 @@
 /**
- * Мінімальний webhook для сповіщень Роману в Telegram.
- * Викликається з SendPulse через Action → Send API request.
+ * Small webhook that notifies the manager in Telegram.
+ * SendPulse calls it from Action → Send API request.
  *
- * Запуск на VPS:
- *   cd /root/AI-Agent_Yagidnyk/sendpulse
  *   npm init -y && npm install express
- *   TELEGRAM_BOT_TOKEN=8959686491:AAE1yIi9lzkkKEJjReN3AAKK2d9XhTZ8fG0 \
- *   TELEGRAM_NOTIFY_CHAT_ID=-5470958053 \
+ *   TELEGRAM_BOT_TOKEN=your-token \
+ *   TELEGRAM_NOTIFY_CHAT_ID=your-chat-id \
  *   PORT=4001 node telegram-notify-server.js
  *
- * URL для SendPulse:
- *   POST http://173.242.54.197:4001/notify
+ * SendPulse posts to /notify or /webhooks/sendpulse/notify.
  */
 
 const http = require("http");
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
-const CHAT_ID = process.env.TELEGRAM_NOTIFY_CHAT_ID || "-5470958053";
+const CHAT_ID = process.env.TELEGRAM_NOTIFY_CHAT_ID || "";
 const PORT = Number(process.env.PORT || 4001);
 
 function readBody(req) {
@@ -57,34 +54,34 @@ function formatMessage(payload) {
   const username = payload.username ? `@${String(payload.username).replace(/^@/, "")}` : null;
   const product = payload.product || payload.productInterest;
   const volume = payload.volumeKg || payload.approxVolumeKg;
-  const channel = payload.channel || payload.messenger || "невідомий канал";
+  const channel = payload.channel || payload.messenger || "unknown channel";
 
   const clientLines = [
-    name ? `• Імʼя: ${escapeHtml(name)}` : null,
-    username ? `• Нік: ${escapeHtml(username)}` : null,
-    payload.phone ? `• Телефон: ${escapeHtml(payload.phone)}` : null,
+    name ? `• Name: ${escapeHtml(name)}` : null,
+    username ? `• Username: ${escapeHtml(username)}` : null,
+    payload.phone ? `• Phone: ${escapeHtml(payload.phone)}` : null,
   ].filter(Boolean);
 
   const requestLines = [
-    product ? `• Товар: ${escapeHtml(product)}` : null,
-    volume ? `• Обʼєм: ${escapeHtml(volume)} кг` : null,
-    payload.location ? `• Локація: ${escapeHtml(payload.location)}` : null,
+    product ? `• Product: ${escapeHtml(product)}` : null,
+    volume ? `• Volume: ${escapeHtml(volume)} kg` : null,
+    payload.location ? `• Location: ${escapeHtml(payload.location)}` : null,
   ].filter(Boolean);
 
   const blocks = [
-    "<b>Новий лід — Ягідник</b>",
-    `Канал: ${escapeHtml(channel)}`,
+    "<b>New lead — Yagidnyk</b>",
+    `Channel: ${escapeHtml(channel)}`,
     "",
-    clientLines.length ? "<b>Клієнт</b>\n" + clientLines.join("\n") : null,
-    requestLines.length ? "<b>Запит</b>\n" + requestLines.join("\n") : null,
-    payload.summary ? `<b>Підсумок</b>\n${escapeHtml(payload.summary)}` : null,
+    clientLines.length ? "<b>Client</b>\n" + clientLines.join("\n") : null,
+    requestLines.length ? "<b>Request</b>\n" + requestLines.join("\n") : null,
+    payload.summary ? `<b>Summary</b>\n${escapeHtml(payload.summary)}` : null,
   ].filter(Boolean);
 
   return blocks.join("\n\n");
 }
 
 async function sendTelegram(text, chatUrl) {
-  if (!BOT_TOKEN) throw new Error("TELEGRAM_BOT_TOKEN не задано");
+  if (!BOT_TOKEN || !CHAT_ID) throw new Error("TELEGRAM_BOT_TOKEN and TELEGRAM_NOTIFY_CHAT_ID are required");
 
   const body = {
     chat_id: CHAT_ID,
@@ -95,7 +92,7 @@ async function sendTelegram(text, chatUrl) {
 
   if (chatUrl) {
     body.reply_markup = {
-      inline_keyboard: [[{ text: "Відкрити чат у SendPulse", url: chatUrl }]],
+      inline_keyboard: [[{ text: "Open the chat in SendPulse", url: chatUrl }]],
     };
   }
 
@@ -139,6 +136,6 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`[notify] Telegram webhook на порту ${PORT}`);
+  console.log(`[notify] Telegram webhook on port ${PORT}`);
   console.log(`[notify] POST http://localhost:${PORT}/notify`);
 });

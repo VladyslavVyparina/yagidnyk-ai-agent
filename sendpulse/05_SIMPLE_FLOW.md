@@ -1,269 +1,105 @@
-# Спрощена воронка SendPulse — AI збирає все сам
+# SendPulse flow: the agent collects the lead, and the graph has no loops
 
-## ВИПРАВЛЕННЯ ЦИКЛІЧНОСТІ (червона стрілка на скріні)
+SendPulse rejects any cycle. A chain block does not make a path legal if some arrow still returns to the same AI Agent.
 
-SendPulse **забороняє будь-які кола** у воронці. На вашому скріні замкнені шляхи:
+## Arrows to delete
 
-| Що видалити | Чому це цикл |
-|-------------|--------------|
-| **Тег → ШІ Агент 2** | ШІ Агент 2 → Фільтр → API → Тег → знову ШІ Агент 2 |
-| **ШІ Агент 2 (ціль ціни) → Google Таблиця** | Таблиця → ШІ Агент 2 → Таблиця |
-| **ШІ Агент 2 (ціль ліда) → Фільтр** | Фільтр → API → Тег → ШІ Агент 2 |
-| **Фільтр (НІ) → ШІ Агент 1** | ШІ Агент 1 → … → знову ШІ Агент 1 |
-| **Тег → Ланцюжок → ШІ Агент 1** | ШІ Агент 1 → Ціль 2 → … → Тег → ШІ Агент 1 |
+| Arrow | Why it cycles |
+|---|---|
+| Tag back to AI Agent 2 | Agent 2, filter, API, tag, agent 2 |
+| AI Agent 2 (price goal) back to the sheet | Sheet, agent 2, sheet |
+| AI Agent 2 (lead goal) back to the filter | Filter, API, tag, agent 2 |
+| Filter “no” back to AI Agent 1 | Agent 1 returns to itself |
+| Tag, chain, AI Agent 1 | Agent 1 eventually returns to itself |
 
-**Ланцюжок НЕ обходить цикл**, якщо є шлях ШІ Агент 1 → … → назад до ШІ Агент 1.
+Every branch has to end with no outgoing arrow. The next visitor message is a new run: the “Standard reply” trigger starts AI Agent 1 again. That trigger is not an arrow on the canvas, so it is not a cycle.
 
-### Єдине рішення: тупики + тригер
-
-Усі гілки закінчуються **без стрілок**. Клієнт пише знову → **тригер «Стандартна відповідь»** → ШІ Агент 1.
-
-Це не стрілка в схемі — циклу немає.
-
----
-
-## Правильна схема (збережеться без помилки)
+## Shape that saves
 
 ```
-[Тригер: Стандартна відповідь] ──→ ШІ Агент 1
-                                        │
-                         ┌──────────────┴──────────────┐
-                         │                             │
-                    Ціль 1 (ціна)                 Ціль 2 (лід)
-                         │                             │
-                   Google Таблиця              Фільтр: phone не пуста
-                         │                             │
-                   Фільтр: price?                  API → Telegram
-                         │                             │
-              ┌──────────┴──────────┐                  │
-            ТАК                    НІ                  │
-              │                     │                  │
-        Повідомлення           Повідомлення            │
-        з ціною                «уточню»                 │
-        [КІНЕЦЬ]               [КІНЕЦЬ]                 │
-                                                         │
-                                                    Тег передано_роману
-                                                      [КІНЕЦЬ]
+[Trigger: Standard reply] --> AI Agent 1
+                                 |
+                    +------------+------------+
+                    |                         |
+               Goal 1 (price)            Goal 2 (lead)
+                    |                         |
+              Google Sheet            Filter: phone is set
+                    |                         |
+              Filter: price?            API --> Telegram
+                    |                         |
+             +------+------+                  |
+            yes           no                  |
+             |             |                  |
+          Message       Message               |
+          with price    "I will check"        |
+          [END]         [END]                 |
+                                              |
+                                    Tag handed-to-manager
+                                         [END]
 ```
 
-**ШІ Агент 2 видаліть** — замініть на **Повідомлення** після таблиці.
+Delete AI Agent 2. After the sheet, use a Message block.
 
----
+## Do this once
 
-## Покроково зараз (5 хвилин)
+1. Delete the arrows listed above.
+2. Delete AI Agent 2, or leave it with no outgoing arrows.
+3. After the sheet: a filter, then a Message with the price, with “wait for a reply” off, then stop.
+4. After the tag: connect nothing.
+5. Chain settings: Standard reply points at AI Agent 1.
+6. Save.
 
-1. **Видалити стрілки:** Тег→ШІ2, ШІ2→Таблиця, ШІ2→Фільтр, Фільтр НІ→ШІ1, Тег→Ланцюжок
-2. **Видалити блок ШІ Агент 2** (або залишити без жодних вихідних стрілок)
-3. **Після Google Таблиці:** Фільтр → **Повідомлення** з ціною (без очікування відповіді) → кінець
-4. **Після Тегу:** нічого не підключати
-5. **Тригер:** Налаштування ланцюжка → «Стандартна відповідь» → ШІ Агент 1
-6. **Зберегти**
+## Goal 2 must not fire twice
 
----
+Add to the goal description: the visitor is ready to deliver, the material, volume, city, and phone are known, and this conversation has not already recorded the request.
 
-## Ціль 2 — не спрацьовувати повторно
+Or, before the phone filter, require that the handed-over tag is empty.
 
-У описі цілі 2 додайте:
-```
-Клієнт готовий здати сировину. Відомі всі дані: сировина, обʼєм, місто, телефон.
-Заявка ще НЕ була зафіксована в цій розмові.
-```
+## Why the bot goes quiet after “I will check the price”
 
-Або перед фільтром phone додайте фільтр:
-```
-Тег передано_роману — пустий (не встановлений)
-```
+When goal 1 fires, the AI Agent block ends. The Google Sheet block only fills `product_price`. It does not write to the visitor. If the next block is only a chain and a tag, the visitor sees nothing until they type again.
 
----
+After the sheet, add a Message that sends the price immediately, with “wait for a reply” turned off.
 
-## Контекст після передачі — як це працює
+Do not put a data-input step for the phone or for `volume_kg` on that price branch. Do not draw an arrow back to the same agent.
 
-| Що | Як |
-|----|-----|
-| Історія чату | SendPulse зберігає в ШІ Агенті |
-| Змінні (phone, volume_kg...) | Зберігаються в контакті |
-| Промпт | Блок «ПІСЛЯ ПЕРЕДАЧІ» забороняє повторні питання |
-| Нові питання | Клієнт пише → тригер → ШІ Агент 1 → відповідь з контексту |
+## Price branch
 
----
+1. Disconnect the sheet from the chain.
+2. Sheet, then a filter: `product_price` is not empty.
+3. Mapping: product name, price into `product_price`, accepted, note.
+4. Yes: a Message, wait turned off. Example, in Ukrainian for the supplier: the current price for `{{product_name}}` is `{{product_price}}`, and ask for an approximate volume. Connect nothing after it.
+5. No: a Message that you will check the price and come back. Connect nothing after it.
+6. The handed-over tag is the end of the lead branch. Do not attach a chain and do not return to the agent.
 
-## Чому бот мовчить після «перевірю ціну»
+## Lead branch, after goal 2
 
-Коли спрацьовує **ціль 1**, блок **ШІ Агент завершується**. Далі йде **Google Таблиця** — вона лише заповнює змінну `product_price`, але **сама не пише клієнту**.
+1. Filter: phone is not empty.
+2. Optional filter: the handed-over tag is not set.
+3. API request to Telegram. The JSON shape is `04_TELEGRAM_NOTIFY_BODY.json`. Leave “save API response” empty.
+4. Set the handed-over tag.
+5. End. The next visitor message hits Standard reply and AI Agent 1.
 
-Якщо після таблиці стоїть лише **Ланцюжок → Тег** (як на вашому скріні) — клієнт **нічого не отримує**, поки сам не напише знову.
+Do not use “open chat and pause for 3 hours”. The bot will stop answering.
 
-**Рішення:** після Google Таблиці обовʼязково додати блок **Повідомлення**, який відправляє ціну **автоматично, без очікування відповіді**.
+## Variables
 
----
+| Name | Type | Meaning |
+|---|---|---|
+| `Name` | string | How the visitor introduced themselves |
+| `product_name` | string | Material, lower case, the name used on the sheet |
+| `product_price` | string | Price from the sheet |
+| `phone` | string | Stored as `+380XXXXXXXXX` |
+| `volume_kg` | string | Number only |
+| `client_location` | string | City or region |
+| `lead_summary` | string | Material, volume, place, fresh or dried, readiness |
 
-## Що видалити / не робити
+## Exit goals
 
-- Після Google Таблиці **не** вести одразу в Ланцюжок / Тег — клієнт не побачить ціну
-- Повідомлення з «Очікування відповіді» для телефону
-- Повідомлення з «Ввід даних» для volume_kg після ціни
-- Стрілки **назад** у той самий ШІ Агент (помилка циклічності)
+Goal 1, price: the visitor asked the current buying price for a specific plant, and the name is already clear. Save the canonical sheet name into `product_name` (lower case; a Russian or mixed spelling maps to the sheet name).
 
----
+Goal 2, lead: name, material, fresh or dried, kilograms, city, and a phone are all present, and this conversation has not already been handed over (`lead_summary` empty, tag not set). Save phone, product, volume, location, and the summary.
 
-## Фінальна схема
+## What a finished exchange looks like
 
-```
-Старт → ШІ Агент (Роман)
-           │
-    ┌──────┴──────┐
-    │             │
-  Ціль 1       Ціль 2
-  (ціна)       (лід готовий)
-    │             │
- Google       Фільтр: phone не пуста
- Таблиця          │
-    │         Відкрити чат
- Фільтр            │
- price?        Запит API → Telegram
-    │             │
- Повідомлення   Тег передано_роману
- з ціною            │
- (БЕЗ вводу)    (кінець, без стрілок)
-    │
-    └── Клієнт пише далі → знову в ШІ Агент
-         (тригер «Стандартна відповідь»)
-```
-
-**Важливо:** після повідомлення з ціною **не зʼєднуйте** нічого. Клієнт пише наступне повідомлення — і знову потрапляє в ШІ Агент.
-
-Якщо після ціни діалог не продовжується — перевірте тригер **«Стандартна відповідь»** на цей ланцюжок.
-
----
-
-## Гілка ціни — покроково (ВИПРАВЛЕННЯ)
-
-### Крок 1. Відʼєднати неправильне
-
-Зараз у вас: `Google Таблиця → Ланцюжок → Тег`
-
-**Видаліть стрілку** від Google Таблиці до Ланцюжка.
-
-### Крок 2. Додати фільтр
-
-```
-Google Таблиця
-    ↓
-Фільтр: product_price — не пуста
-```
-
-У Google Таблиці перевірте маппінг:
-| Колонка | Змінна |
-|---------|--------|
-| ТОВАР | product_name (або product_found) |
-| ЦІНА | **product_price** |
-| ПРИЙМАЄТЬСЯ | product_available |
-| ПРИМІТКА | product_note |
-
-### Крок 3. Додати Повідомлення (зелена гілка «ТАК»)
-
-Блок **Повідомлення** → **вимкніть** «Очікування відповіді підписника».
-
-Текст (скопіюйте):
-
-```
-Зараз у нас на {{product_name}} — {{product_price}}. Який у вас орієнтовний обʼєм?
-```
-
-**Після цього блоку нічого не підключайте.**
-
-### Крок 4. Гілка «НІ» (ціна не знайдена)
-
-```
-Фільтр product_price — пуста
-    ↓
-Повідомлення (без очікування):
-Зараз уточню актуальну ціну на {{product_name}} у прийомці і повернусь до вас.
-```
-
-Теж **без стрілок** після.
-
-### Крок 5. Після тегу — кінець, без Ланцюжка
-
-Тег `передано_роману` — **кінець гілки**. Не підключайте Ланцюжок і не ведіть назад у ШІ Агент.
-
----
-
-## Повний приклад діалогу
-
-| Хто | Текст |
-|-----|-------|
-| Клієнт | Яка ціна на полин? |
-| ШІ Агент | Вітаю! Мене звати Роман, я менеджер прийомки ягід "Ягідник". Зараз гляну ціну на полин. |
-| *система* | Google Таблиця → product_price = 10 |
-| **Повідомлення** | Зараз у нас ціна на полин — 10 грн за кг. Підкажіть, будь ласка, орієнтовний обʼєм? |
-| Клієнт | 50 кг, Київ, 0961730079 |
-| ШІ Агент | Зафіксував. Найближчим часом зв'яжусь з вами. До речі, підпишіться на наш Телеграм канал, в нас там завжди актуальний прайс та інша дуже корисна інформація) https://t.me/+OvpZDg-WMFplOGRi |
-
-## Змінні бота
-
-| Назва | Тип | Опис |
-|-------|-----|------|
-| `Name` | Рядок | Імʼя клієнта |
-| `product_name` | Рядок | Назва сировини (мала літера) |
-| `product_price` | Рядок | Ціна з таблиці |
-| `phone` | Рядок | Телефон |
-| `volume_kg` | Рядок | Обʼєм |
-| `client_location` | Рядок | Місто/область |
-| `lead_summary` | Рядок | Підсумок ліда |
-
-У ШІ Агенті в «Зберегти дані» додайте для імені:
-| Опис | Змінна |
-|------|--------|
-| Імʼя клієнта, як він представився | Name |
-
----
-
-## Цілі виходу ШІ Агента
-
-### Ціль 1 — ціна
-**Опис:**
-```
-Клієнт запитує актуальну закупівельну ціну на конкретну рослину або сировину. Назва товару вже зрозуміла з повідомлення клієнта.
-```
-
-**Зберегти дані:**
-| Опис | Змінна |
-|------|--------|
-| Назва рослини або сировини — завжди з малої літери, українською, канонічна назва як у прайсі (полин, не Полин; полынь → полин) | product_name |
-
-Опис цілі 2 (скопіюйте в SendPulse):
-```
-Клієнт готовий здати сировину. Зібрані ВСІ дані: імʼя, сировина, свіжа/сушена, обʼєм у кг, місто, телефон +380.
-Заявка ще НЕ була передана в цій розмові ({{lead_summary}} порожня, тег передано_роману не встановлений).
-```
-
-**Зберегти дані:**
-| Опис | Змінна |
-|------|--------|
-| Номер телефону — приймати 096..., 380..., +380...; зберігати в міжнародному форматі +380XXXXXXXXX | phone |
-| Назва сировини | product_name |
-| Орієнтовний обʼєм у кг, тільки число | volume_kg |
-| Місто або область | client_location |
-| Короткий підсумок: сировина, обʼєм, локація, свіжа/сушена, готовність | lead_summary |
-
-## Гілка ліда (після цілі 2)
-
-1. Фільтр: phone — не пуста
-2. Фільтр (опційно): тег `передано_роману` — не встановлений
-3. Запит API → Telegram (JSON з 04_TELEGRAM_NOTIFY_BODY.json)
-4. Збереження значень API — **порожньо**
-5. Дія: тег `передано_роману`
-6. **Кінець** — нічого не підключати. Клієнт пише → тригер «Стандартна відповідь» → ШІ Агент 1
-
-**НЕ використовуйте** «Відкрити чат + пауза 3 год» — бот перестане відповідати клієнту.
-
-## Гілка ціни (після цілі 1)
-
-Див. розділ **«Гілка ціни — покроково»** вище.
-
-Коротко:
-1. Google Таблиця → шукати по `{{product_name}}`
-2. Фільтр: `product_price` не пуста
-3. Повідомлення **без очікування відповіді** (див. текст у розділі вище)
-4. **Нічого не підключати** після повідомлення
+The visitor asks the price of wormwood. The agent says it will look. The sheet fills `product_price`. The Message block sends the price and asks for volume. The visitor replies with kilograms, a city, and a phone. The agent confirms, and the lead branch notifies the manager. The channel link, if you send one, is your own invite, not a link stored in this repository.

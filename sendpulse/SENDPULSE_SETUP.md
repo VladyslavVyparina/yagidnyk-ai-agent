@@ -1,165 +1,75 @@
-# SendPulse: Google Таблиця з цінами + сповіщення в Telegram
+# SendPulse: price sheet and a Telegram notice
 
-## Частина 1. Google Таблиця — формат
+The live bot token, chat id, and spreadsheet URL belong in your own SendPulse account and in `.env`. They are not written in this file.
 
-Рекомендована структура аркуша `Прайс` (або `Аркуш1`):
+## 1. Sheet shape
 
-| ТОВАР | ЦІНА | ПРИЙМАЄТЬСЯ | ПРИМІТКА |
-|-------|------|-------------|----------|
-| Полин | 50 грн/кг сухий, 10 грн/кг свіжий | так | |
-| Листя горіха | 120 грн/кг | так | сушене |
-| Туя | 80 грн/кг | так | менше деревʼяної частини |
-| Гілки сосни | | ні | не приймаємо |
+Sheet name `Price` (or the first sheet):
 
-Посилання на вашу таблицю:
-https://docs.google.com/spreadsheets/d/135eS0j72otGtMIsOmSN0eVhvdtOJsm2d15RLa_Piue0/edit
+| PRODUCT | PRICE | ACCEPTED | NOTE |
+|---|---|---|---|
+| wormwood | 50 UAH/kg dried, 10 UAH/kg fresh | yes | |
+| walnut leaf | 120 UAH/kg | yes | dried |
+| thuja | 80 UAH/kg | yes | less wood |
+| pine branches | | no | not accepted |
 
----
+## 2. Connect Google Sheets in SendPulse
 
-## Частина 2. Підключити Google Sheets у SendPulse
+1. Chatbots, then the TikTok or Telegram bot.
+2. Bot settings, then Integrations.
+3. Next to Google Sheets, Grant access.
+4. Sign in to the Google account that owns the sheet.
+5. Allow SendPulse to read spreadsheets.
+6. Pick the price spreadsheet.
+7. Save.
 
-1. У SendPulse відкрийте **Chatbots** → ваш бот (TikTok / Telegram).
-2. **Bot settings** → **Integrations**.
-3. Біля **Google Sheets** натисніть **Grant access**.
-4. Увійдіть у Google-акаунт, де лежить таблиця.
-5. Дозвольте SendPulse доступ до таблиць.
-6. Оберіть таблицю **test** (або як назвете прайс).
-7. Збережіть.
+SendPulse documents the same action at `https://sendpulse.com/knowledge-base/chatbot/action/connect-google-sheets`.
 
-Документація SendPulse:
-https://sendpulse.com/knowledge-base/chatbot/action/connect-google-sheets
+## 3. How the agent reads a current price
 
----
+### A. Recommended: AI Agent, then retrieve one row
 
-## Частина 3. Як AI бере актуальні ціни (2 варіанти)
+SendPulse AI does not read the sheet the way a ChatGPT file search does. The flow has to fetch the row.
 
-### Варіант A — Рекомендований для SendPulse: AI Agent + Retrieve data from row
+1. An AI Agent block receives the visitor’s message.
+2. The agent stores the product name in `product_name`.
+3. Action, Retrieve data from a Google Sheets row:
+   - Spreadsheet: the price file
+   - Sheet: the first sheet
+   - Search column: PRODUCT
+   - Contains: `{{product_name}}`
+   - Map PRODUCT to `product_found`, PRICE to `product_price`, ACCEPTED to `product_available`, NOTE to `product_note`
+4. A following message or agent answers from those variables. If `product_price` is empty, say the item is not being bought right now. Do not invent a price.
+5. If the row is missing, take the “not found” branch and say the item is not on the current list.
 
-SendPulse AI **не читає таблицю напряму як ChatGPT file search**. Потрібно в воронці:
+The supplier-facing wording stays in Ukrainian, because that is the language of the buying chat. The prompt files in this folder are that wording.
 
-1. **AI Agent** — клієнт пише запит.
-2. AI Agent зберігає назву товару у змінну, наприклад `product_name` (через "Save user response data").
-3. Блок **Action** → **Retrieve data from Google Sheets row**:
-   - Spreadsheet: ваша таблиця
-   - Sheet: Аркуш1
-   - Search column: **ТОВАР**
-   - Contains value: змінна `{{product_name}}`
-   - Map columns:
-     - ТОВАР → `product_found`
-     - ЦІНА → `product_price`
-     - ПРИЙМАЄТЬСЯ → `product_available`
-     - ПРИМІТКА → `product_note`
-4. Далі знову **AI Agent** з промптом:
+### B. Simpler, and not live
 
-```
-Клієнт цікавиться товаром: {{product_name}}.
-Дані з прайсу:
-- Ціна: {{product_price}}
-- Приймається: {{product_available}}
-- Примітка: {{product_note}}
+Export the sheet to PDF or text once a day or once a week, upload it to the OpenAI Assistant inside SendPulse, and paste `01_SYSTEM_PROMPT_OLEKSANDR.txt` into the instructions. Prices change only when you upload the file again. Use option A when the price has to be current.
 
-Відповідай українською як Роман. Якщо product_price порожній — скажи, що зараз не приймаємо або уточниш. Не вигадуй ціну.
-```
+## 4. Notify the manager in Telegram
 
-5. Якщо рядок не знайдено — гілка "не знайдено" → AI каже, що позиція зараз не в прайсі.
+Add the bot to the manager chat. Store the bot token and the chat id as SendPulse variables or as environment variables for `telegram-notify-server.js`. Do not paste a token into the flow as a permanent URL if you can avoid it. If the flow calls Telegram directly:
 
-### Варіант B — Простіше, але без live-пошуку по рядку
+- Method POST
+- URL `https://api.telegram.org/bot<token>/sendMessage`
+- Header `Content-Type: application/json`
+- Body with `chat_id` and a `text` built from `{{channel}}`, `{{first_name}}`, `{{username}}`, `{{phone}}`, `{{product_name}}`, `{{volume_kg}}`, `{{lead_summary}}`, `{{messenger}}`
 
-1. Експортуйте аркуш прайсу як **PDF або TXT** раз на день/тиждень.
-2. Завантажте файл у **OpenAI Assistant** (SendPulse → OpenAI Assistant integration).
-3. У Instructions вставте системний промпт з `01_SYSTEM_PROMPT_OLEKSANDR.txt`.
-4. AI шукатиме ціни у файлі, але оновлення — лише після повторного завантаження файлу.
+The server option posts to your own `/webhooks/sendpulse/notify` with `channel`, `firstName`, `username`, `phone`, `product`, `volumeKg`, and `summary`. The token stays in the process environment.
 
-Для **актуальних цін у реальному часі** використовуйте **Варіант A**.
+## 5. What to paste where
 
----
+| SendPulse field | File |
+|---|---|
+| AI Agent instructions | `01_SYSTEM_PROMPT_OLEKSANDR.txt` |
+| OpenAI Assistant instructions | that file plus `02_BUSINESS_CONTEXT.txt` |
+| Knowledge upload | `03_KNOWLEDGE_BASE_FAQ.txt` |
+| The block after the sheet lookup | the price reply from section 3A |
 
-## Частина 4. Сповіщення Роману в Telegram
+## 6. Variables and tags
 
-Chat ID: `-5470958053`
-Bot token: `8959686491:AAE1yIi9lzkkKEJjReN3AAKK2d9XhTZ8fG0`
+String variables: `product_name`, `product_price`, `product_available`, `volume_kg`, `client_location`, `phone`, `lead_summary`.
 
-Бот має бути доданий у цей чат/групу.
-
-### Спосіб 1 — Без сервера, прямо з SendPulse (найпростіший)
-
-У воронці, коли лід кваліфікований / передача менеджеру:
-
-1. Додайте блок **Action** → **Send API request**.
-2. Налаштування:
-
-**Method:** POST
-
-**URL:**
-```
-https://api.telegram.org/bot8959686491:AAE1yIi9lzkkKEJjReN3AAKK2d9XhTZ8fG0/sendMessage
-```
-
-**Headers:**
-```
-Content-Type: application/json
-```
-
-**Body (JSON):**
-```json
-{
-  "chat_id": "-5470958053",
-  "text": "Новий лід ({{channel}})\nІмʼя: {{first_name}}\nНік: @{{username}}\nТелефон: {{phone}}\nТовар: {{product_name}}\nОбʼєм: {{volume_kg}} кг\nПідсумок: {{lead_summary}}\nКанал: {{messenger}}"
-}
-```
-
-Замініть `{{...}}` на реальні змінні SendPulse (імʼя підписника, телефон, товар тощо).
-
-### Спосіб 2 — Через webhook-скрипт на VPS (гнучкіше форматування)
-
-Якщо на VPS ще працює ваш сервер — див. `telegram-notify-server.js` у цій папці.
-
-URL для SendPulse API request:
-```
-http://173.242.54.197:4000/webhooks/sendpulse/notify
-```
-
-Body:
-```json
-{
-  "channel": "TikTok",
-  "firstName": "{{first_name}}",
-  "username": "{{username}}",
-  "phone": "{{phone}}",
-  "product": "{{product_name}}",
-  "volumeKg": "{{volume_kg}}",
-  "summary": "{{lead_summary}}"
-}
-```
-
----
-
-## Частина 5. Що вставити в SendPulse AI
-
-| Куди в SendPulse | Що вставити |
-|------------------|-------------|
-| AI Agent → Instructions / System prompt | `01_SYSTEM_PROMPT_OLEKSANDR.txt` |
-| OpenAI Assistant → Instructions | `01_SYSTEM_PROMPT_OLEKSANDR.txt` + `02_BUSINESS_CONTEXT.txt` |
-| Knowledge base / Upload file | `03_KNOWLEDGE_BASE_FAQ.txt` |
-| Окремий блок AI після Google Sheets | промпт з Частини 3, Варіант A |
-
----
-
-## Частина 6. Теги і змінні SendPulse (рекомендація)
-
-Створіть змінні бота:
-- `product_name` — String
-- `product_price` — String
-- `product_available` — String
-- `volume_kg` — String
-- `client_location` — String
-- `phone` — String
-- `lead_summary` — String
-
-Теги для сегментації:
-- `цікавиться_ціною`
-- `готовий_здати`
-- `передано_роману`
-- `несезонний_товар`
-
-Коли AI збирає лід — поставте тег `передано_роману` і викличте Telegram-сповіщення.
+Tags: interested in a price, ready to deliver, handed to the manager, out of season. When the lead is complete, set the handed-over tag and send the Telegram notice.
