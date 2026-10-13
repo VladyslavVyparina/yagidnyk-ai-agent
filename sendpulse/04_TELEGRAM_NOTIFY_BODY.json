@@ -1,0 +1,16 @@
+{
+  "chat_id": "-5470958053",
+  "parse_mode": "HTML",
+  "disable_web_page_preview": true,
+  "text": "<b>Новий лід — Ягідник</b>\nКанал: {{messenger}}\n\n<b>Клієнт</b>\n• Імʼя: {{First_name}}\n• Нік: @{{username}}\n• Телефон: {{phone}}\n\n<b>Запит</b>\n• Товар: {{product_name}}\n• Обʼєм: {{volume_kg}} кг\n• Локація: {{client_location}}\n\n<b>Підсумок</b>\n{{lead_summary}}",
+  "reply_markup": {
+    "inline_keyboard": [
+      [
+        {
+          "text": "Відкрити чат у SendPulse",
+          "url": "https://login.sendpulse.com/chatbots/chats?botId={{$bot_id}}&contactId={{contact_id}}"
+        }
+      ]
+    ]
+  }
+}

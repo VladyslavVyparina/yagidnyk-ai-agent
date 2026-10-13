@@ -1,0 +1,174 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Channel {
+  TELEGRAM
+  TIKTOK
+}
+
+enum ConversationStatus {
+  AI_ACTIVE // AI-агент веде діалог
+  HANDED_OFF // передано менеджеру, AI мовчить
+  CLOSED // діалог закрито
+}
+
+enum MessageDirection {
+  INCOMING
+  OUTGOING
+}
+
+enum MessageSender {
+  CLIENT
+  AI
+  MANAGER
+  SYSTEM
+}
+
+enum MessageContentType {
+  TEXT
+  PHOTO
+  VIDEO
+  DOCUMENT
+  AUDIO
+  VOICE
+  STICKER
+  OTHER
+}
+
+enum LeadStatus {
+  NEW
+  QUALIFIED
+  HANDED_OFF
+  WON
+  LOST
+}
+
+model Contact {
+  id            String   @id @default(cuid())
+  channel       Channel
+  externalId    String // telegram chat id / tiktok open_id
+  username      String? // @username в telegram, унікальний нік в tiktok
+  firstName     String?
+  lastName      String?
+  phone         String? // підтягується автоматично, якщо клієнт надав номер
+  avatarUrl     String?
+  profileUrl    String? // посилання на профіль tiktok, якщо доступне
+  notes         String? // нотатки менеджера
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  conversations    Conversation[]
+  pendingInterests PendingInterest[]
+  leads            Lead[]
+
+  @@unique([channel, externalId])
+  @@index([phone])
+}
+
+model Conversation {
+  id            String             @id @default(cuid())
+  contactId     String
+  contact       Contact            @relation(fields: [contactId], references: [id])
+  channel       Channel
+  status        ConversationStatus @default(AI_ACTIVE)
+  hasInteraction Boolean           @default(false) // true після першої змістовної відповіді AI/менеджера
+  assignedManager String?          // ідентифікатор/ім'я менеджера, якщо передано
+  lastMessageAt DateTime           @default(now())
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  messages Message[]
+  leads    Lead[]
+
+  @@index([channel, status])
+  @@index([hasInteraction])
+}
+
+model Message {
+  id                String             @id @default(cuid())
+  conversationId    String
+  conversation      Conversation       @relation(fields: [conversationId], references: [id])
+  direction         MessageDirection
+  sender            MessageSender
+  contentType       MessageContentType @default(TEXT)
+  text              String?
+  mediaUrl          String? // локальний шлях або URL до медіа
+  mediaFileId       String? // telegram file_id / tiktok media id для повторного використання
+  externalMessageId String? // id повідомлення в telegram/tiktok
+  createdAt         DateTime           @default(now())
+
+  @@index([conversationId, createdAt])
+}
+
+model Product {
+  id          String    @id @default(cuid())
+  name        String
+  aliases     String[]  @default([])
+  category    String?
+  unit        String    @default("кг")
+  freshPrice  Decimal?  @db.Decimal(10, 2)
+  driedPrice  Decimal?  @db.Decimal(10, 2)
+  isAvailable Boolean   @default(true)
+  seasonNote  String?
+  rawRow      Json? // сирий рядок з Google Sheets для діагностики
+  sheetRowId  String? // ідентифікатор рядка в таблиці (для оновлення)
+  updatedAt   DateTime  @updatedAt
+  createdAt   DateTime  @default(now())
+
+  @@unique([name])
+}
+
+model PendingInterest {
+  id           String    @id @default(cuid())
+  contactId    String
+  contact      Contact   @relation(fields: [contactId], references: [id])
+  productName  String
+  note         String?
+  notified     Boolean   @default(false)
+  notifiedAt   DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@index([productName, notified])
+}
+
+model Lead {
+  id               String       @id @default(cuid())
+  contactId        String
+  contact          Contact      @relation(fields: [contactId], references: [id])
+  conversationId   String
+  conversation     Conversation @relation(fields: [conversationId], references: [id])
+  productInterest  String?
+  approxVolumeKg   String?
+  status           LeadStatus   @default(NEW)
+  summary          String? // короткий підсумок для менеджера
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+}
+
+model KnowledgeBaseEntry {
+  id        String   @id @default(cuid())
+  question  String
+  answer    String
+  tags      String[] @default([])
+  source    String? // "faq-import" | "manual" | "chat-history"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model AdminUser {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+}
+
+model Setting {
+  key   String @id
+  value String
+}
